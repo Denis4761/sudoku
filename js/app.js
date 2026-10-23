@@ -321,7 +321,8 @@ function showHint() {
   }
 
   hint.view = view;
-  $('#hint-step').textContent = `Hint ${hint.level}/3`;
+  $('#hint-step').textContent = `Step ${hint.level} of 3`;
+  $('#hint-panel').dataset.level = hint.level;
   $('#hint-title').textContent = view.title;
   $('#hint-text').replaceChildren(...view.lines.map(hintLine));
   $('#hint-next').textContent = view.button;
@@ -445,7 +446,7 @@ function buildBoard() {
   for (let d = 1; d <= 9; d++) {
     const b = document.createElement('button');
     b.dataset.d = d;
-    b.append(String(d), document.createElement('small'));
+    b.textContent = String(d);
     b.addEventListener('click', () => onDigit(d));
     pad.append(b);
     padButtons[d] = b;
@@ -504,7 +505,6 @@ function render() {
   for (const v of g.values) counts[v]++;
   for (let d = 1; d <= 9; d++) {
     padButtons[d].classList.toggle('done', counts[d] >= 9 && !dupes.size);
-    padButtons[d].lastChild.textContent = 9 - counts[d] > 0 ? 9 - counts[d] : '';
   }
 }
 
