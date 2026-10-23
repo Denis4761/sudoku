@@ -2,7 +2,7 @@
 // refreshing it in the background (stale-while-revalidate), so updates
 // arrive on the next launch without breaking offline play.
 
-const CACHE = 'sudoku-v1';
+const CACHE = 'sudoku-v2';
 const SHELL = [
   './',
   './index.html',
