@@ -395,44 +395,96 @@ button {
   font-size: 15px;
 }
 .primary { background: var(--accent); color: var(--accent-ink); }
-.secondary { background: var(--surface-2); }
+.secondary { background: var(--surface); color: var(--ink); box-shadow: var(--box-shadow); }
+.secondary:active { background: var(--surface-2); }
 
 dialog.sheet {
   width: min(520px, calc(100vw - 24px));
   max-height: calc(100dvh - 40px);
   border: 0;
-  border-radius: 18px;
-  padding: 6px 18px 20px;
-  background: var(--surface);
+  border-radius: 22px;
+  padding: 8px 16px 20px;
+  background: var(--bg);
   color: var(--ink);
   box-shadow: var(--shadow);
 }
-dialog.sheet::backdrop { background: rgb(0 0 0 / 0.35); }
+dialog.sheet::backdrop { background: rgb(35 35 35 / 0.45); }
 dialog.center { text-align: center; }
 .sheet-head { display: flex; justify-content: space-between; align-items: center; }
-.sheet h2 { margin: 10px 0; font-size: 20px; }
-.sheet h3 { margin: 18px 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.sheet-head .link-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  font-size: 14px;
+}
+.sheet h2 { margin: 12px 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+.sheet h3 { margin: 20px 4px 8px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.sheet > p { margin-left: 4px; margin-right: 4px; }
 
 .levels { display: grid; gap: 8px; }
 .levels button {
   text-align: left;
-  padding: 10px 14px;
-  border-radius: 12px;
-  background: var(--surface-2);
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--box-shadow);
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-.levels button b { font-size: 16px; }
+.levels button:active { background: var(--surface-2); }
+.levels button b { font-size: 16px; font-weight: 600; }
 .levels button span { font-size: 13px; color: var(--muted); }
-.levels button.current { outline: 2px solid var(--accent); }
+.levels button.current { background: var(--sel); color: var(--sel-ink); }
+.levels button.current span { color: var(--sel-ink); opacity: 0.8; }
 
 .row-buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .sheet:not(.center) .row-buttons { justify-content: flex-start; }
 
-.toggle { display: flex; gap: 10px; align-items: center; padding: 6px 0; font-size: 15px; }
-.toggle input { width: 20px; height: 20px; accent-color: var(--accent); }
+.group { background: var(--surface); border-radius: 14px; box-shadow: var(--box-shadow); overflow: hidden; }
+.toggle {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  font-size: 15px;
+}
+.toggle + .toggle { border-top: 1px solid var(--line-thin); }
+.toggle span { flex: 1; }
+.toggle input { order: 2; }
+.toggle input {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  margin: 0;
+  width: 46px;
+  height: 28px;
+  border-radius: 14px;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line-thin);
+  position: relative;
+  transition: background 0.15s;
+}
+.toggle input::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  background: #faf7f0;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  transition: transform 0.15s;
+}
+.toggle input:checked { background: var(--accent); box-shadow: none; }
+.toggle input:checked::before { transform: translateX(18px); }
+.toggle input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; text-align: center; }
-.stats div { background: var(--surface-2); border-radius: 10px; padding: 8px 4px; font-size: 12px; }
-.stats b { display: block; font-size: 16px; margin: 2px 0; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; text-align: center; }
+.stats div { background: var(--surface); box-shadow: var(--box-shadow); border-radius: 12px; padding: 10px 4px; font-size: 12px; color: var(--muted); }
+.stats b { display: block; font-size: 17px; font-weight: 600; margin: 2px 0; color: var(--ink); }
