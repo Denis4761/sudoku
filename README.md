@@ -36,3 +36,7 @@ node tests/ui.mjs                # headless UI smoke test (needs playwright)
 ```
 
 `js/sudoku.js` holds the solver, generator, grader and hint engine; `js/app.js` the UI; `sw.js` the offline cache.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
