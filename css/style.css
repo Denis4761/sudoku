@@ -385,7 +385,7 @@ button {
   place-items: center;
 }
 .pad button:active { background: var(--surface-2); }
-.pad.notes-mode button { font-size: min(24px, calc(var(--board) / 9 * 0.6)); color: var(--accent); }
+.pad.notes-mode button { color: var(--muted); opacity: 0.6; }
 .pad button.done { opacity: 0.2; pointer-events: none; }
 
 .primary, .secondary {
