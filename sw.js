@@ -2,7 +2,7 @@
 // refreshing it in the background (stale-while-revalidate), so updates
 // arrive on the next launch without breaking offline play.
 
-const CACHE = 'sudoku-v5';
+const CACHE = 'sudoku-v6';
 const SHELL = [
   './',
   './index.html',
@@ -11,6 +11,7 @@ const SHELL = [
   './js/sudoku.js',
   './js/storage.js',
   './js/worker.js',
+  './js/modifiers.js',
   './manifest.webmanifest',
   './icons/apple-touch-icon.png',
   './icons/icon-192.png',

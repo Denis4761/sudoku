@@ -29,6 +29,8 @@
       <button id="timer" class="timer" aria-label="Pause">0:00</button>
     </header>
 
+    <div id="mods-bar" class="mods-bar" hidden aria-label="Modifiers for this game"></div>
+
     <div id="install-banner" class="banner" hidden>
       <span>For saves that last, open this from your Home Screen: tap <b>Share</b>, then <b>Add to Home Screen</b>.</span>
       <button id="install-dismiss" class="link-btn" aria-label="Dismiss">✕</button>
@@ -41,6 +43,7 @@
         <button id="resume" class="primary">Resume</button>
       </div>
       <div id="busy" class="paused" hidden><p>Building a puzzle…</p></div>
+      <div id="toast" class="toast" hidden role="status"></div>
     </main>
 
     <div class="controls">
@@ -74,7 +77,16 @@
       <button class="link-btn" aria-label="Close">✕</button>
     </form>
 
+    <h3>Today</h3>
+    <button id="daily-btn" class="daily">
+      <span class="daily-top"><b></b><span class="daily-state"></span></span>
+      <span class="daily-meta"></span>
+      <span class="daily-streak"></span>
+    </button>
+
     <h3>New game</h3>
+    <div id="mod-chips" class="mod-chips" aria-label="Modifiers for the next game"></div>
+    <p id="mod-summary" class="muted small mod-summary"></p>
     <div id="level-buttons" class="levels"></div>
 
     <h3>Board</h3>
@@ -110,6 +122,15 @@
     <form method="dialog" class="row-buttons">
       <button value="close" class="secondary">Look at board</button>
       <button value="new" class="primary">New game</button>
+    </form>
+  </dialog>
+
+  <dialog id="fail" class="sheet center">
+    <h2 id="fail-title">Out of strikes</h2>
+    <p id="fail-text"></p>
+    <form method="dialog" class="row-buttons">
+      <button value="close" class="secondary">Look at board</button>
+      <button value="retry" class="primary">Try again</button>
     </form>
   </dialog>
 

@@ -1,7 +1,11 @@
 import {
   LEVELS, PEERS, UNITS, bit, boxOf, cellName, colOf, rowOf, conflicts, candidatesFor,
-  findHint, nudgeText, explainStep, TECH_NAMES, generate, parseGrid,
+  findHint, nudgeText, explainStep, TECH_NAMES, generate, parseGrid, seededRng,
 } from './sudoku.js';
+import {
+  MODIFIERS, toggleModifier, strikeLimit, countdownPar, canPlaceDigit, nextInOrder,
+  localDate, dailyPlan, dailyStreak,
+} from './modifiers.js';
 import * as store from './storage.js';
 
 const HISTORY_LIMIT = 300;
@@ -14,6 +18,8 @@ const defaults = () => ({
   settings: { autoClean: true, showMistakes: false, highlightSame: true },
   stats: {},
   bank: {},
+  nextMods: [],
+  daily: { log: {}, puzzle: null },
   installDismissed: false,
   lastExport: null,
 });
@@ -49,16 +55,20 @@ function startWorker() {
   }
 }
 
-function buildPuzzle(level) {
+/** Build a puzzle off the main thread. A seed makes it the same every time (used by the daily puzzle). */
+function buildPuzzle(level, seed = null) {
   if (!worker) {
-    return new Promise((resolve) => setTimeout(() => resolve(generate(level)), 30));
+    const opts = seed === null ? {} : { rng: seededRng(seed) };
+    return new Promise((resolve) => setTimeout(() => resolve(generate(level, opts)), 30));
   }
   const id = ++jobId;
   return new Promise((resolve) => {
     pending.set(id, resolve);
-    worker.postMessage({ id, level });
+    worker.postMessage({ id, level, seed });
   });
 }
+
+const toStored = (r) => ({ puzzle: r.puzzle.join(''), solution: r.solution.join(''), level: r.level, techniques: r.techniques });
 
 const refilling = new Set();
 
@@ -67,26 +77,70 @@ async function refillBank(level) {
   refilling.add(level);
   const p = await buildPuzzle(level);
   refilling.delete(level);
-  data.bank[level] = { puzzle: p.puzzle.join(''), solution: p.solution.join(''), level: p.level, techniques: p.techniques };
+  data.bank[level] = toStored(p);
   persist();
 }
 
-async function newGame(level) {
+let dailyBuilding = null;
+
+/** Today's daily puzzle, built once from the date and then kept for the day. */
+async function dailyPuzzle(plan) {
+  const cached = data.daily.puzzle;
+  if (cached?.date === plan.date) return cached;
+  dailyBuilding ??= buildPuzzle(plan.level, plan.seed).then((r) => {
+    dailyBuilding = null;
+    data.daily.puzzle = { date: plan.date, ...toStored(r) };
+    persist();
+    return data.daily.puzzle;
+  });
+  return dailyBuilding;
+}
+
+/**
+ * Start a game at a level with optional modifiers. Mystery swaps the level
+ * for a random one from Medium to Expert.
+ *
+ *   newGame(3, { mods: ['noUndo', 'threeStrikes'] })
+ */
+async function newGame(level, { mods = [] } = {}) {
   closeHint();
+  if (mods.includes('mystery')) level = 2 + Math.floor(Math.random() * 3);
   let p = data.bank[level];
   if (p) {
     delete data.bank[level];
   } else {
     $('#busy').hidden = false;
-    const r = await buildPuzzle(level);
-    p = { puzzle: r.puzzle.join(''), solution: r.solution.join(''), level: r.level, techniques: r.techniques };
+    p = toStored(await buildPuzzle(level));
     $('#busy').hidden = true;
   }
+  startGame(level, p, { mods });
+}
+
+/** Start or continue today's daily puzzle with its twist. */
+async function playDaily() {
+  const plan = dailyPlan(localDate());
+  const g = game();
+  if (g?.daily === plan.date && !g.failed) {
+    render();
+    return;
+  }
+  closeHint();
+  $('#busy').hidden = false;
+  const p = await dailyPuzzle(plan);
+  $('#busy').hidden = true;
+  startGame(plan.level, p, { mods: [plan.twist], daily: plan.date });
+}
+
+function startGame(level, p, { mods = [], daily = null } = {}) {
   if (data.game && !data.game.done && data.game.values.some((v, i) => v && !Number(data.game.puzzle[i]))) {
     bumpStat(data.game.level, 'abandoned');
   }
   data.game = {
     level,
+    mods,
+    daily,
+    failed: null,
+    par: mods.includes('countdown') ? countdownPar(level, statFor(level).best) : 0,
     grade: p.level,
     techniques: p.techniques,
     puzzle: p.puzzle,
@@ -103,6 +157,7 @@ async function newGame(level) {
   bumpStat(level, 'started');
   selected = -1;
   paused = false;
+  if (mods.includes('penOnly')) notesMode = false;
   persist();
   render();
   refillAll(level);
@@ -119,6 +174,7 @@ function refillAll(first) {
 
 const game = () => data.game;
 const isGiven = (i) => Number(game().puzzle[i]) !== 0;
+const hasMod = (m) => (game()?.mods ?? []).includes(m);
 
 function snapshot() {
   const g = game();
@@ -145,22 +201,29 @@ function clearPeerNotes(i, d) {
 function placeValue(i, d) {
   const g = game();
   if (!canEdit(i)) return;
+  if (g.values[i] !== d && !canPlaceDigit(g.mods ?? [], g.values, d)) {
+    showToast(`In order: finish the ${nextInOrder(g.values)}s first.`);
+    return;
+  }
   snapshot();
+  let wrong = false;
   if (g.values[i] === d) {
     g.values[i] = 0;
   } else {
     g.values[i] = d;
     g.notes[i] = 0;
-    if (d !== Number(g.solution[i])) g.mistakes++;
+    wrong = d !== Number(g.solution[i]);
+    if (wrong) g.mistakes++;
     if (data.settings.autoClean) clearPeerNotes(i, d);
   }
   commit();
-  checkWin();
+  if (wrong && g.mistakes >= strikeLimit(g.mods ?? [])) failGame('strikes');
+  else checkWin();
 }
 
 function toggleNote(i, d) {
   const g = game();
-  if (!canEdit(i) || g.values[i]) return;
+  if (!canEdit(i) || g.values[i] || hasMod('penOnly')) return;
   snapshot();
   g.notes[i] ^= bit(d);
   commit();
@@ -177,7 +240,7 @@ function erase(i) {
 
 function undo() {
   const g = game();
-  if (!g || g.done || !data.history.length) return;
+  if (!g || g.done || !data.history.length || hasMod('noUndo')) return;
   const s = data.history.pop();
   g.values = s.v;
   g.notes = s.n;
@@ -186,7 +249,7 @@ function undo() {
 
 function fillNotes() {
   const g = game();
-  if (!g || g.done) return;
+  if (!g || g.done || hasMod('handNotes') || hasMod('penOnly')) return;
   snapshot();
   const c = candidatesFor(g.values);
   for (let i = 0; i < 81; i++) if (!g.values[i]) g.notes[i] = c[i];
@@ -204,11 +267,56 @@ function clearNotes() {
 function restart() {
   const g = game();
   if (!g || !confirm('Clear all your numbers and notes and start this puzzle over?')) return;
+  if (g.mods?.length) return resetRun();
   snapshot();
   g.values = parseGrid(g.puzzle);
   g.notes.fill(0);
   g.done = false;
   commit();
+}
+
+/** Start a modifier game over from scratch: board, clock, strikes and history. */
+function resetRun() {
+  const g = game();
+  closeHint();
+  g.values = parseGrid(g.puzzle);
+  g.notes.fill(0);
+  g.done = false;
+  g.failed = null;
+  g.mistakes = 0;
+  g.hints = 0;
+  g.elapsed = 0;
+  data.history = [];
+  selected = -1;
+  paused = false;
+  persist();
+  render();
+}
+
+/** Daily runs retry the same puzzle; other modifier games get a fresh one. */
+function tryAgain() {
+  const g = game();
+  if (!g) return;
+  if (g.daily) resetRun();
+  else newGame(g.mods.includes('mystery') ? 2 : g.level, { mods: g.mods });
+}
+
+const FAIL_TEXT = {
+  strikes: (g) => (strikeLimit(g.mods) === 1 ? 'Sudden death: one wrong number ends the game.' : 'Three wrong numbers ends the game.'),
+  time: (g) => `The ${fmtTime(g.par)} countdown ran out.`,
+};
+
+function failGame(reason) {
+  const g = game();
+  g.done = true;
+  g.failed = reason;
+  selected = -1;
+  bumpStat(g.level, 'failed');
+  persist();
+  render();
+  $('#fail-title').textContent = reason === 'time' ? "Time's up" : 'Out of strikes';
+  $('#fail-text').textContent = `${FAIL_TEXT[reason](g)} ${g.daily ? 'Try the daily puzzle again from the start.' : 'Try again with a new puzzle and the same modifiers.'}`;
+  setTimeout(() => $('#fail').showModal(), 350);
 }
 
 function checkWin() {
@@ -221,10 +329,17 @@ function checkWin() {
   if (!s.best || g.elapsed < s.best) s.best = g.elapsed;
   persist();
   render();
+  if (g.daily) data.daily.log[g.daily] = { solved: true, elapsed: g.elapsed, level: g.level, twist: g.mods[0] };
+  persist();
   const bits = [`${LEVELS[g.level].name} in ${fmtTime(g.elapsed)}`];
   bits.push(g.mistakes ? `${g.mistakes} mistake${g.mistakes > 1 ? 's' : ''}` : 'no mistakes');
   bits.push(g.hints ? `${g.hints} hint${g.hints > 1 ? 's' : ''}` : 'no hints');
-  $('#win-text').textContent = `${bits.join(', ')}. Best ${LEVELS[g.level].name.toLowerCase()} time: ${fmtTime(s.best)}.`;
+  let text = `${bits.join(', ')}. Best ${LEVELS[g.level].name.toLowerCase()} time: ${fmtTime(s.best)}.`;
+  if (g.daily) {
+    const n = dailyStreak(data.daily.log, localDate());
+    text = `Daily puzzle done. ${text} Daily streak: ${n} day${n === 1 ? '' : 's'}.`;
+  }
+  $('#win-text').textContent = text;
   setTimeout(() => $('#win').showModal(), 450);
 }
 
@@ -455,28 +570,32 @@ function buildBoard() {
 
 function render() {
   const g = game();
-  $('#level-label').textContent = g ? LEVELS[g.level].name : 'Sudoku';
+  $('#level-label').textContent = g ? levelLabel(g) : 'Sudoku';
   $('#meta-label').textContent = g ? metaText(g) : '';
   $('#notes-state').textContent = notesMode ? 'on' : 'off';
   $('#notes-btn').setAttribute('aria-pressed', String(notesMode));
+  $('#notes-btn').disabled = hasMod('penOnly');
   $('#pad').classList.toggle('notes-mode', notesMode);
-  $('#undo-btn').disabled = !g || g.done || !data.history.length;
+  $('#undo-btn').disabled = !g || g.done || !data.history.length || hasMod('noUndo');
+  renderModsBar();
   $('#paused').hidden = !paused;
   renderTimer();
   if (!g) return;
 
   const sol = g.solution;
-  const dupes = conflicts(g.values);
+  const blind = hasMod('blindfold') && !g.done;
+  const showWrong = !blind && (data.settings.showMistakes || strikeLimit(g.mods ?? []) < Infinity || g.failed);
+  const dupes = blind ? new Set() : conflicts(g.values);
   const selVal = selected >= 0 ? g.values[selected] : 0;
   const view = hint?.view;
-  const sameDigit = view?.sameDigit || (data.settings.highlightSame ? selVal : 0);
-  const showPeers = selected >= 0 && !view;
+  const sameDigit = view?.sameDigit || (data.settings.highlightSame && !blind ? selVal : 0);
+  const showPeers = selected >= 0 && !view && !blind;
 
   for (let i = 0; i < 81; i++) {
     const el = cells[i];
     const v = g.values[i];
     const given = isGiven(i);
-    const wrong = v && !given && (dupes.has(i) || (data.settings.showMistakes && v !== Number(sol[i])));
+    const wrong = v && !given && (dupes.has(i) || (showWrong && v !== Number(sol[i])));
     const peer = showPeers && i !== selected && (rowOf(i) === rowOf(selected) || colOf(i) === colOf(selected) || boxOf(i) === boxOf(selected));
     const hintCls = view?.classes[i];
 
@@ -503,16 +622,56 @@ function render() {
 
   const counts = new Array(10).fill(0);
   for (const v of g.values) counts[v]++;
+  const allowed = hasMod('inOrder') && !notesMode ? nextInOrder(g.values) : 10;
   for (let d = 1; d <= 9; d++) {
     padButtons[d].classList.toggle('done', counts[d] >= 9 && !dupes.size);
+    padButtons[d].classList.toggle('locked', d > allowed);
   }
+}
+
+function levelLabel(g) {
+  const name = hasMod('mystery') && !g.done ? 'Mystery' : LEVELS[g.level].name;
+  return g.daily ? `Daily · ${name}` : name;
+}
+
+/** Chips under the top bar for the game's modifiers, with strikes and countdown state. */
+function renderModsBar() {
+  const g = game();
+  const bar = $('#mods-bar');
+  const mods = g?.mods ?? [];
+  bar.hidden = !mods.length;
+  $('#app').classList.toggle('has-mods', mods.length > 0);
+  bar.replaceChildren(...mods.map((m) => {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.textContent = MODIFIERS[m].name;
+    const limit = m === 'threeStrikes' || m === 'suddenDeath' ? strikeLimit(mods) : 0;
+    if (limit) {
+      chip.classList.add('hot');
+      const used = Math.min(g.mistakes, limit);
+      chip.append(Object.assign(document.createElement('b'), { textContent: ' ' + '✕'.repeat(used) + '○'.repeat(limit - used) }));
+    }
+    if (m === 'countdown') chip.classList.add('hot');
+    chip.title = MODIFIERS[m].blurb;
+    return chip;
+  }));
+}
+
+let toastTimer = 0;
+
+function showToast(text) {
+  const t = $('#toast');
+  t.textContent = text;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (t.hidden = true), 2200);
 }
 
 function metaText(g) {
   const parts = [];
   if (g.mistakes) parts.push(`${g.mistakes} mistake${g.mistakes > 1 ? 's' : ''}`);
   if (g.hints) parts.push(`${g.hints} hint${g.hints > 1 ? 's' : ''}`);
-  if (g.done) parts.unshift('Solved');
+  if (g.done) parts.unshift(g.failed ? 'Failed' : 'Solved');
   return parts.join(' · ');
 }
 
@@ -526,7 +685,10 @@ function fmtTime(ms) {
 
 function renderTimer() {
   const g = game();
-  $('#timer').textContent = g ? (paused ? '▶ ' : '') + fmtTime(g.elapsed) : '0:00';
+  const countdown = g && hasMod('countdown');
+  const shown = countdown ? Math.max(0, g.par - g.elapsed + 999) : g?.elapsed ?? 0;
+  $('#timer').textContent = g ? (paused ? '▶ ' : '') + fmtTime(shown) : '0:00';
+  $('#timer').classList.toggle('countdown', Boolean(countdown) && !g.done);
 }
 
 // ---------------------------------------------------------------------------
@@ -571,6 +733,7 @@ function onKey(e) {
 }
 
 function toggleNotesMode() {
+  if (hasMod('penOnly')) return showToast('Pen only: notes are off for this game.');
   notesMode = !notesMode;
   render();
 }
@@ -602,6 +765,7 @@ function tick() {
   if (g && !g.done && !paused && document.visibilityState === 'visible' && !$('#menu').open) {
     g.elapsed += Math.min(now - lastTick, 2000);
     renderTimer();
+    if (hasMod('countdown') && g.elapsed >= g.par) failGame('time');
     if (++ticksSinceSave >= 10) {
       ticksSinceSave = 0;
       persist();
@@ -624,18 +788,65 @@ function openMenu() {
     b.lastChild.textContent = info.blurb;
     if (game()?.level === Number(lvl)) b.classList.add('current');
     b.addEventListener('click', () => {
-      const g = game();
-      const inProgress = g && !g.done && g.values.some((v, i) => v && !isGiven(i));
-      if (inProgress && !confirm('Start a new game? The current one will be replaced.')) return;
+      if (!confirmReplace()) return;
       $('#menu').close();
-      newGame(Number(lvl));
+      newGame(Number(lvl), { mods: data.nextMods });
     });
     wrap.append(b);
   }
+  renderDailyCard();
+  renderModPicker();
+  $('#fill-notes').disabled = hasMod('handNotes') || hasMod('penOnly');
   for (const key of Object.keys(data.settings)) $(`#set-${key}`).checked = data.settings[key];
   renderStats();
   $('#backup-status').textContent = data.lastExport ? `Last backup: ${new Date(data.lastExport).toLocaleDateString()}` : 'No backup exported yet.';
   $('#menu').showModal();
+}
+
+function confirmReplace() {
+  const g = game();
+  const inProgress = g && !g.done && g.values.some((v, i) => v && !isGiven(i));
+  return !inProgress || confirm('Start a new game? The current one will be replaced.');
+}
+
+const WEEKDAY = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+
+function renderDailyCard() {
+  const plan = dailyPlan(localDate());
+  const entry = data.daily.log[plan.date];
+  const g = game();
+  const playing = g?.daily === plan.date && !g.done;
+  const streak = dailyStreak(data.daily.log, plan.date);
+  const [y, m, d] = plan.date.split('-').map(Number);
+  const level = plan.twist === 'mystery' && !entry ? 'Mystery level' : LEVELS[plan.level].name;
+  const btn = $('#daily-btn');
+  btn.querySelector('b').textContent = `Daily puzzle · ${WEEKDAY.format(new Date(y, m - 1, d))}`;
+  btn.querySelector('.daily-meta').textContent = `${level} · Twist: ${MODIFIERS[plan.twist].name}. ${MODIFIERS[plan.twist].blurb}`;
+  btn.querySelector('.daily-state').textContent = entry ? `Solved in ${fmtTime(entry.elapsed)}` : playing ? 'Continue' : 'Play';
+  btn.querySelector('.daily-streak').textContent = streak ? `${streak}-day streak` : 'Start a streak today';
+  btn.disabled = Boolean(entry);
+  btn.classList.toggle('solved', Boolean(entry));
+}
+
+function renderModPicker() {
+  const wrap = $('#mod-chips');
+  wrap.replaceChildren();
+  for (const [id, info] of Object.entries(MODIFIERS)) {
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.type = 'button';
+    b.textContent = info.name;
+    b.title = info.blurb;
+    b.setAttribute('aria-pressed', String(data.nextMods.includes(id)));
+    b.addEventListener('click', () => {
+      data.nextMods = toggleModifier(data.nextMods, id);
+      persist();
+      renderModPicker();
+    });
+    wrap.append(b);
+  }
+  const chosen = data.nextMods.map((m) => MODIFIERS[m].blurb);
+  $('#mod-summary').textContent = chosen.length ? chosen.join(' ') : 'Modifiers are optional. Pick any to change the rules, then pick a level.';
 }
 
 function renderStats() {
@@ -689,7 +900,7 @@ async function importBackup(file) {
     if (!validBackup(b)) throw new Error("this doesn't look like a Sudoku backup");
     if (!confirm('Replace the current game, settings and stats with this backup?')) return;
     const bank = data.bank;
-    data = { ...defaults(), ...b, bank };
+    data = { ...defaults(), ...b, bank, daily: { ...defaults().daily, ...b.daily } };
     delete data.app;
     delete data.exportedAt;
     closeHint();
@@ -746,6 +957,15 @@ function wire() {
   $('#win').addEventListener('close', () => {
     if ($('#win').returnValue === 'new') openMenu();
   });
+  $('#fail').addEventListener('close', () => {
+    if ($('#fail').returnValue === 'retry') tryAgain();
+  });
+  $('#daily-btn').addEventListener('click', () => {
+    const g = game();
+    if (g?.daily !== localDate() && !confirmReplace()) return;
+    $('#menu').close();
+    playDaily();
+  });
   $('#install-dismiss').addEventListener('click', () => {
     data.installDismissed = true;
     persist();
@@ -764,13 +984,14 @@ async function main() {
   buildBoard();
   wire();
   const saved = await store.load();
-  if (saved) data = { ...defaults(), ...saved, settings: { ...defaults().settings, ...saved.settings } };
+  if (saved) data = { ...defaults(), ...saved, settings: { ...defaults().settings, ...saved.settings }, daily: { ...defaults().daily, ...saved.daily } };
   store.requestPersist();
   startWorker();
   maybeShowInstallBanner();
   render();
   if (data.game) refillAll(data.game.level);
   else openMenu();
+  dailyPuzzle(dailyPlan(localDate()));
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   }

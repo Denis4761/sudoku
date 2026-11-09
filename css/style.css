@@ -488,3 +488,70 @@ dialog.center { text-align: center; }
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; text-align: center; }
 .stats div { background: var(--surface); box-shadow: var(--box-shadow); border-radius: 12px; padding: 10px 4px; font-size: 12px; color: var(--muted); }
 .stats b { display: block; font-size: 17px; font-weight: 600; margin: 2px 0; color: var(--ink); }
+
+/* Modifiers, daily puzzle and fail sheet */
+#app.has-mods {
+  --board: min(calc(100vw - 2 * var(--gutter)), calc(100dvh - 432px - env(safe-area-inset-top) - env(safe-area-inset-bottom)), 560px);
+}
+.mods-bar { width: var(--board); display: flex; gap: 6px; min-height: 26px; align-items: center; overflow-x: auto; scrollbar-width: none; }
+.mods-bar[hidden] { display: none; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--hint-target);
+  color: var(--hint-target-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex: none;
+}
+.chip.hot { background: var(--sel); color: var(--sel-ink); }
+.chip b { font-weight: 600; letter-spacing: 1px; }
+.timer.countdown { background: var(--sel); color: var(--sel-ink); }
+.pad button.locked { opacity: 0.2; }
+
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 24px);
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: var(--shadow);
+  text-align: center;
+  pointer-events: none;
+}
+.toast[hidden] { display: none; }
+
+.daily {
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--sel);
+  color: var(--sel-ink);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.daily-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.daily-top b { font-size: 16px; font-weight: 600; }
+.daily-state { font-size: 13px; font-weight: 700; padding: 3px 10px; border-radius: 10px; background: var(--sage); color: var(--sage-ink); white-space: nowrap; }
+.daily-meta, .daily-streak { font-size: 13px; opacity: 0.85; }
+.daily.solved { background: var(--surface); color: var(--ink); box-shadow: var(--box-shadow); }
+.daily.solved .daily-meta, .daily.solved .daily-streak { color: var(--muted); opacity: 1; }
+.daily:disabled { cursor: default; }
+
+.mod-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.mod-chips .chip { background: var(--surface); color: var(--ink); box-shadow: var(--box-shadow); padding: 7px 12px; font-size: 13px; }
+.mod-chips .chip[aria-pressed="true"] { background: var(--sel); color: var(--sel-ink); box-shadow: none; }
+.mod-summary { margin: 8px 4px 10px; }
