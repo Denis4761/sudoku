@@ -23,6 +23,9 @@ Always launch from the Home Screen icon: that copy has its own storage, separate
   - Medium: locked candidates, pairs
   - Hard: triples, X-Wing
   - Expert: Y-Wing, XYZ-Wing, Swordfish, quads
+- **Daily puzzle**: one puzzle per date, built on the phone from the date. Its level follows the weekday and it carries one modifier as the day's twist. Solving it keeps a daily streak.
+- **Modifiers**: Hand notes, No undo, Mystery, Blindfold, In order, Three strikes, Countdown, Pen only and Sudden death, picked in the menu for any new game.
+- **Quests** (target icon in the top bar): six challenge ladders (Clean, Pure, Speed, Hunter, Endurance, Survival) with five steps each, three daily quests with one swap, a five-rung weekly gauntlet that earns streak freezes, stars, ranks and milestones.
 - **Backup**: Menu → Export backup opens the share sheet so you can save a JSON file to Files or iCloud Drive; Import backup restores it.
 
 ## Development
@@ -31,11 +34,13 @@ Plain HTML, CSS and ES modules; no build step.
 
 ```sh
 npx http-server -p 8080 .        # serve locally
-node --test tests/*.test.mjs     # engine tests
-node tests/ui.mjs                # headless UI smoke test (needs playwright)
+node --test tests/*.test.mjs     # engine, modifier and quest tests
+node tests/ui.mjs                # headless UI smoke tests (need playwright)
+node tests/modifiers-ui.mjs
+node tests/quests-ui.mjs
 ```
 
-`js/sudoku.js` holds the solver, generator, grader and hint engine; `js/app.js` the UI; `sw.js` the offline cache.
+`js/sudoku.js` holds the solver, generator, grader and hint engine; `js/modifiers.js` the modifier rules and daily plan; `js/quests.js` the quest rules; `js/app.js` the UI; `sw.js` the offline cache.
 
 ## License
 
