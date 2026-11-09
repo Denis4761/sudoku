@@ -25,7 +25,7 @@
   --sage: #cad183;
   --sage-ink: #232323;
   --dot: #66023c;
-  --box-shadow: 0 0 0 1px #dcd3c3, 0 1px 3px rgb(35 35 35 / 0.1), 0 6px 16px rgb(35 35 35 / 0.08);
+  --box-shadow: 0 0 0 2px #dcd3c3, 0 1px 3px rgb(35 35 35 / 0.1), 0 6px 16px rgb(35 35 35 / 0.08);
   --card-shadow: 0 1px 2px rgb(35 35 35 / 0.06), 0 4px 14px rgb(35 35 35 / 0.06);
   --shadow: 0 10px 30px rgb(0 0 0 / 0.15);
   color-scheme: light;
@@ -59,7 +59,7 @@
     --sage: #cad183;
     --sage-ink: #232323;
     --dot: #cad183;
-    --box-shadow: 0 0 0 1px #4a4a4a, 0 2px 4px rgb(0 0 0 / 0.35), 0 6px 16px rgb(0 0 0 / 0.3);
+    --box-shadow: 0 0 0 2px #4a4a4a, 0 2px 4px rgb(0 0 0 / 0.35), 0 6px 16px rgb(0 0 0 / 0.3);
     --card-shadow: 0 0 0 1px rgb(255 255 255 / 0.05);
     --shadow: 0 10px 30px rgb(0 0 0 / 0.5);
     color-scheme: dark;
@@ -93,7 +93,7 @@
   --sage: #cad183;
   --sage-ink: #232323;
   --dot: #cad183;
-  --box-shadow: 0 0 0 1px #4a4a4a, 0 2px 4px rgb(0 0 0 / 0.35), 0 6px 16px rgb(0 0 0 / 0.3);
+  --box-shadow: 0 0 0 2px #4a4a4a, 0 2px 4px rgb(0 0 0 / 0.35), 0 6px 16px rgb(0 0 0 / 0.3);
   --card-shadow: 0 0 0 1px rgb(255 255 255 / 0.05);
   --shadow: 0 10px 30px rgb(0 0 0 / 0.5);
   color-scheme: dark;
