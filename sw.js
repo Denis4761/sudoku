@@ -12,6 +12,7 @@ const SHELL = [
   './js/storage.js',
   './js/worker.js',
   './js/modifiers.js',
+  './js/quests.js',
   './manifest.webmanifest',
   './icons/apple-touch-icon.png',
   './icons/icon-192.png',

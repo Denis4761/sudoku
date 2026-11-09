@@ -6,6 +6,10 @@ import {
   MODIFIERS, toggleModifier, strikeLimit, countdownPar, canPlaceDigit, nextInOrder,
   localDate, dailyPlan, dailyStreak,
 } from './modifiers.js';
+import {
+  TYPES, MILESTONES, ROMAN, newQuestState, rollover, recordGame, swapQuest, rankFor,
+  describeQuest, stepLabel, startSpec, checkMilestones,
+} from './quests.js';
 import * as store from './storage.js';
 
 const HISTORY_LIMIT = 300;
@@ -20,6 +24,7 @@ const defaults = () => ({
   bank: {},
   nextMods: [],
   daily: { log: {}, puzzle: null },
+  quests: null,
   installDismissed: false,
   lastExport: null,
 });
@@ -56,7 +61,7 @@ function startWorker() {
 }
 
 /** Build a puzzle off the main thread. A seed makes it the same every time (used by the daily puzzle). */
-function buildPuzzle(level, seed = null) {
+function buildPuzzle(level, seed = null, techs = null) {
   if (!worker) {
     const opts = seed === null ? {} : { rng: seededRng(seed) };
     return new Promise((resolve) => setTimeout(() => resolve(generate(level, opts)), 30));
@@ -64,7 +69,7 @@ function buildPuzzle(level, seed = null) {
   const id = ++jobId;
   return new Promise((resolve) => {
     pending.set(id, resolve);
-    worker.postMessage({ id, level, seed });
+    worker.postMessage({ id, level, seed, techs });
   });
 }
 
@@ -102,18 +107,19 @@ async function dailyPuzzle(plan) {
  *
  *   newGame(3, { mods: ['noUndo', 'threeStrikes'] })
  */
-async function newGame(level, { mods = [] } = {}) {
+async function newGame(level, { mods = [], techs = null, ...extra } = {}) {
   closeHint();
   if (mods.includes('mystery')) level = 2 + Math.floor(Math.random() * 3);
   let p = data.bank[level];
-  if (p) {
+  if (p && (!techs || p.techniques.some((t) => techs.includes(t)))) {
     delete data.bank[level];
   } else {
     $('#busy').hidden = false;
-    p = toStored(await buildPuzzle(level));
+    $('#busy p').textContent = techs ? 'Looking for a puzzle with that technique…' : 'Building a puzzle…';
+    p = toStored(await buildPuzzle(level, null, techs));
     $('#busy').hidden = true;
   }
-  startGame(level, p, { mods });
+  startGame(level, p, { mods, techs, ...extra });
 }
 
 /** Start or continue today's daily puzzle with its twist. */
@@ -131,14 +137,18 @@ async function playDaily() {
   startGame(plan.level, p, { mods: [plan.twist], daily: plan.date });
 }
 
-function startGame(level, p, { mods = [], daily = null } = {}) {
+function startGame(level, p, { mods = [], daily = null, techs = null, gauntlet = null, rung = null } = {}) {
   if (data.game && !data.game.done && data.game.values.some((v, i) => v && !Number(data.game.puzzle[i]))) {
     bumpStat(data.game.level, 'abandoned');
+    noteGame(data.game, { solved: false });
   }
   data.game = {
     level,
     mods,
     daily,
+    techs,
+    gauntlet,
+    rung,
     failed: null,
     par: mods.includes('countdown') ? countdownPar(level, statFor(level).best) : 0,
     grade: p.level,
@@ -298,7 +308,7 @@ function tryAgain() {
   const g = game();
   if (!g) return;
   if (g.daily) resetRun();
-  else newGame(g.mods.includes('mystery') ? 2 : g.level, { mods: g.mods });
+  else newGame(g.mods.includes('mystery') ? 2 : g.level, { mods: g.mods, techs: g.techs, gauntlet: g.gauntlet, rung: g.rung });
 }
 
 const FAIL_TEXT = {
@@ -306,12 +316,37 @@ const FAIL_TEXT = {
   time: (g) => `The ${fmtTime(g.par)} countdown ran out.`,
 };
 
+/** Report a finished game to the quests and return what it counted toward. */
+function noteGame(g, { solved, best = {} }) {
+  const today = localDate();
+  ensureQuests();
+  const summary = {
+    level: g.level, mods: g.mods ?? [], mistakes: g.mistakes, hints: g.hints, elapsed: g.elapsed,
+    techniques: g.techniques ?? [], solved, daily: g.daily, gauntlet: g.gauntlet, rung: g.rung,
+  };
+  return recordGame(data.quests, summary, { today, best, dailyLog: data.daily.log });
+}
+
+function renderWinQuests(events) {
+  const list = $('#win-quests');
+  const shown = events.filter((e) => e.kind !== 'progress' || e.detail);
+  list.hidden = !shown.length;
+  list.replaceChildren(...shown.map((e) => {
+    const row = document.createElement('div');
+    row.className = `wq wq-${e.kind}`;
+    row.append(Object.assign(document.createElement('span'), { textContent: e.title }));
+    row.append(Object.assign(document.createElement('b'), { textContent: e.stars ? `+${e.stars} ★` : e.detail ?? '' }));
+    return row;
+  }));
+}
+
 function failGame(reason) {
   const g = game();
   g.done = true;
   g.failed = reason;
   selected = -1;
   bumpStat(g.level, 'failed');
+  noteGame(g, { solved: false });
   persist();
   render();
   $('#fail-title').textContent = reason === 'time' ? "Time's up" : 'Out of strikes';
@@ -325,12 +360,14 @@ function checkWin() {
   g.done = true;
   selected = -1;
   const s = statFor(g.level);
+  const bestBefore = Object.fromEntries(Object.keys(LEVELS).map((l) => [l, data.stats[l]?.best ?? 0]));
   s.won = (s.won ?? 0) + 1;
   if (!s.best || g.elapsed < s.best) s.best = g.elapsed;
+  if (g.daily) data.daily.log[g.daily] = { solved: true, elapsed: g.elapsed, level: g.level, twist: g.mods[0] };
+  const events = noteGame(g, { solved: true, best: bestBefore });
+  renderWinQuests(events);
   persist();
   render();
-  if (g.daily) data.daily.log[g.daily] = { solved: true, elapsed: g.elapsed, level: g.level, twist: g.mods[0] };
-  persist();
   const bits = [`${LEVELS[g.level].name} in ${fmtTime(g.elapsed)}`];
   bits.push(g.mistakes ? `${g.mistakes} mistake${g.mistakes > 1 ? 's' : ''}` : 'no mistakes');
   bits.push(g.hints ? `${g.hints} hint${g.hints > 1 ? 's' : ''}` : 'no hints');
@@ -803,6 +840,172 @@ function openMenu() {
   $('#menu').showModal();
 }
 
+// ---------------------------------------------------------------------------
+// Quests sheet
+// ---------------------------------------------------------------------------
+
+/** Make sure the quest state exists and is rolled for today. */
+function ensureQuests() {
+  if (!data.quests) {
+    data.quests = newQuestState(data.stats);
+    checkMilestones(data.quests);
+  }
+  const plan = dailyPlan(localDate());
+  if (rollover(data.quests, { today: plan.date, dailyLog: data.daily.log })) persist();
+  renderQuestDot();
+}
+
+function renderQuestDot() {
+  $('#quests-dot').hidden = !data.quests?.unseen;
+}
+
+const el = (tag, cls, text) => Object.assign(document.createElement(tag), cls ? { className: cls } : {}, text != null ? { textContent: text } : {});
+
+function chipsFor(mods) {
+  const wrap = el('div', 'q-chips');
+  for (const m of mods) wrap.append(Object.assign(el('span', 'chip', MODIFIERS[m].name), { title: MODIFIERS[m].blurb }));
+  return wrap;
+}
+
+function openQuests() {
+  ensureQuests();
+  data.quests.unseen = false;
+  persist();
+  renderQuestDot();
+  renderQuests();
+  $('#quests').showModal();
+}
+
+function renderQuests() {
+  const q = data.quests;
+  const today = localDate();
+  const best = Object.fromEntries(Object.keys(LEVELS).map((l) => [l, data.stats[l]?.best ?? 0]));
+
+  const rank = rankFor(q.stars);
+  $('#rank-name').textContent = rank.name;
+  $('#rank-next').textContent = rank.next ? `${q.stars} / ${rank.to} ★ to ${rank.next}` : `${q.stars} ★ · top rank`;
+  $('#rank-bar').style.width = rank.next ? `${Math.round(((q.stars - rank.from) / (rank.to - rank.from)) * 100)}%` : '100%';
+  const days = $('#streak-days');
+  days.replaceChildren();
+  let day = today;
+  const row = [];
+  for (let k = 0; k < 7; k++) {
+    const [y, m, d] = day.split('-').map(Number);
+    const entry = data.daily.log[day];
+    const cell = el('i', entry?.frozen ? 'frozen' : entry?.solved ? 'on' : '', new Intl.DateTimeFormat(undefined, { weekday: 'narrow' }).format(new Date(y, m - 1, d)));
+    if (k === 0) cell.classList.add('today');
+    row.unshift(cell);
+    const prev = new Date(y, m - 1, d - 1);
+    day = localDate(prev);
+  }
+  days.append(...row);
+  const streak = dailyStreak(data.daily.log, today);
+  $('#streak-text').textContent = `${streak}-day streak · ${q.freezes} freeze${q.freezes === 1 ? '' : 's'} saved`;
+  $('#streak-best').textContent = `best ${Math.max(q.counters.bestStreak, streak)}`;
+
+  const now = new Date();
+  const hoursLeft = 24 - now.getHours();
+  $('#today-label').textContent = `Today · resets in ${hoursLeft} h`;
+  $('#swap-hint').textContent = q.day.swapped ? 'Swap used' : 'Tap ↻ to swap one';
+  const list = $('#today-quests');
+  list.replaceChildren(...q.day.quests.map((quest, k) => questRow(quest, k, best)));
+
+  const week = q.week;
+  const g = $('#gauntlet');
+  g.replaceChildren();
+  const rung = week.rungs[Math.min(week.at, 4)];
+  const head = el('div', 'q-head');
+  head.append(el('b', '', week.done ? 'Gauntlet cleared' : `Rung ${week.at + 1} · ${LEVELS[rung.level].name}`));
+  head.append(el('span', 'q-stars', week.done ? '✓ 12 ★' : '+12 ★'));
+  g.append(head);
+  if (!week.done) {
+    g.append(chipsFor(rung.mods));
+    const play = el('button', 'q-play', 'Play');
+    play.addEventListener('click', () => startQuest({ level: rung.level, mods: rung.mods, gauntlet: week.id, rung: week.at }));
+    head.append(play);
+  }
+  const pips = el('div', 'pips5');
+  for (let k = 0; k < 5; k++) pips.append(el('i', k < week.at ? 'on' : k === week.at && !week.done ? 'now' : ''));
+  g.append(pips);
+  g.append(el('p', 'q-sub', 'Five puzzles this week, each harder than the last. Clearing it earns a streak freeze.'));
+
+  const ladders = $('#ladders');
+  ladders.replaceChildren(...Object.entries(TYPES).map(([t, info]) => {
+    const step = q.ladders[t];
+    const row = el('div', 'ladder');
+    const name = el('div', 'ladder-name');
+    name.append(el('b', '', info.name), el('span', '', step > 5 ? `${info.blurb} · ${stepLabel(step)}` : info.blurb));
+    const pipsRow = el('span', 'ladder-pips');
+    for (let k = 1; k <= 5; k++) pipsRow.append(el('i', k < step ? 'on' : k === step ? 'now' : '', ROMAN[k - 1]));
+    row.append(name, pipsRow);
+    return row;
+  }));
+
+  const ms = $('#milestones');
+  ms.replaceChildren(...Object.entries(MILESTONES).map(([id, m]) => {
+    const tier = q.milestones[id] ?? 0;
+    const value = m.read(q.counters, q);
+    const card = el('div', 'ms');
+    card.append(el('b', '', tier ? `${m.name} ${ROMAN[tier - 1]}` : m.name));
+    card.append(el('span', '', tier >= 3 ? 'complete' : m.goal ? m.goal(q.counters) : `${value} / ${m.tiers[tier]} ${m.unit}`));
+    const pips = el('span', 'ms-pips');
+    for (let k = 0; k < 3; k++) pips.append(el('i', k < tier ? 'on' : ''));
+    card.append(pips);
+    return card;
+  }));
+}
+
+function questRow(quest, index, best) {
+  const row = el('div', `q${quest.done ? ' done' : ''}`);
+  const head = el('div', 'q-head');
+  const title = el('b', '', quest.type === 'daily' ? 'Daily puzzle' : TYPES[quest.type].name);
+  if (quest.type !== 'daily') title.append(el('span', 'tier', stepLabel(quest.step)));
+  head.append(title);
+  head.append(el('span', 'q-stars', quest.done ? `✓ ${quest.stars} ★` : `+${quest.stars} ★`));
+  if (!quest.done) {
+    if (quest.type !== 'daily' && !data.quests.day.swapped) {
+      const swap = Object.assign(el('button', 'q-swap', '↻'), { title: 'Swap this quest' });
+      swap.setAttribute('aria-label', 'Swap this quest');
+      swap.addEventListener('click', () => {
+        if (swapQuest(data.quests, index)) {
+          persist();
+          renderQuests();
+        }
+      });
+      head.append(swap);
+    }
+    const play = el('button', 'q-play', 'Play');
+    play.addEventListener('click', () => (quest.type === 'daily' ? startDailyFromQuests() : startQuest(startSpec(quest))));
+    head.append(play);
+  }
+  row.append(head);
+  let sub = describeQuest(quest, best);
+  if (quest.type === 'daily') {
+    const plan = dailyPlan(localDate());
+    sub = `${plan.twist === 'mystery' ? 'Mystery level' : LEVELS[plan.level].name} with today's twist`;
+    row.append(el('p', 'q-sub', sub));
+    row.append(chipsFor([plan.twist]));
+  } else {
+    if (quest.need > 1) sub += ` · ${quest.progress} / ${quest.need}`;
+    row.append(el('p', 'q-sub', sub));
+    if (quest.mods.length) row.append(chipsFor(quest.mods));
+  }
+  return row;
+}
+
+function startQuest(spec) {
+  if (!confirmReplace()) return;
+  $('#quests').close();
+  newGame(spec.level, spec);
+}
+
+function startDailyFromQuests() {
+  const g = game();
+  if (g?.daily !== localDate() && !confirmReplace()) return;
+  $('#quests').close();
+  playDaily();
+}
+
 function confirmReplace() {
   const g = game();
   const inProgress = g && !g.done && g.values.some((v, i) => v && !isGiven(i));
@@ -906,6 +1109,7 @@ async function importBackup(file) {
     closeHint();
     selected = -1;
     paused = false;
+    ensureQuests();
     persist();
     render();
     $('#backup-status').textContent = 'Backup restored.';
@@ -929,6 +1133,7 @@ function maybeShowInstallBanner() {
 
 function wire() {
   $('#menu-btn').addEventListener('click', openMenu);
+  $('#quests-btn').addEventListener('click', openQuests);
   $('#timer').addEventListener('click', () => setPaused(!paused));
   $('#resume').addEventListener('click', () => setPaused(false));
   $('#undo-btn').addEventListener('click', undo);
@@ -956,6 +1161,7 @@ function wire() {
   }
   $('#win').addEventListener('close', () => {
     if ($('#win').returnValue === 'new') openMenu();
+    if ($('#win').returnValue === 'quests') openQuests();
   });
   $('#fail').addEventListener('close', () => {
     if ($('#fail').returnValue === 'retry') tryAgain();
@@ -975,6 +1181,7 @@ function wire() {
   document.addEventListener('visibilitychange', () => {
     lastTick = performance.now();
     if (document.visibilityState === 'hidden') persist();
+    else ensureQuests();
   });
   window.addEventListener('pagehide', persist);
   setInterval(tick, 1000);
@@ -991,6 +1198,7 @@ async function main() {
   render();
   if (data.game) refillAll(data.game.level);
   else openMenu();
+  ensureQuests();
   dailyPuzzle(dailyPlan(localDate()));
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
