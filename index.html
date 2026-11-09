@@ -19,15 +19,23 @@
 <body>
   <div id="app">
     <header class="topbar">
-      <button id="menu-btn" class="icon-btn" aria-label="Menu">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
-      </button>
+      <div class="topbar-left">
+        <button id="menu-btn" class="icon-btn" aria-label="Menu">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+        <button id="quests-btn" class="icon-btn" aria-label="Quests">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.8"/></svg>
+          <i id="quests-dot" class="dot" hidden></i>
+        </button>
+      </div>
       <div class="title">
         <span id="level-label">Sudoku</span>
         <span id="meta-label" class="muted"></span>
       </div>
       <button id="timer" class="timer" aria-label="Pause">0:00</button>
     </header>
+
+    <div id="mods-bar" class="mods-bar" hidden aria-label="Modifiers for this game"></div>
 
     <div id="install-banner" class="banner" hidden>
       <span>For saves that last, open this from your Home Screen: tap <b>Share</b>, then <b>Add to Home Screen</b>.</span>
@@ -41,6 +49,7 @@
         <button id="resume" class="primary">Resume</button>
       </div>
       <div id="busy" class="paused" hidden><p>Building a puzzle…</p></div>
+      <div id="toast" class="toast" hidden role="status"></div>
     </main>
 
     <div class="controls">
@@ -74,7 +83,16 @@
       <button class="link-btn" aria-label="Close">✕</button>
     </form>
 
+    <h3>Today</h3>
+    <button id="daily-btn" class="daily">
+      <span class="daily-top"><b></b><span class="daily-state"></span></span>
+      <span class="daily-meta"></span>
+      <span class="daily-streak"></span>
+    </button>
+
     <h3>New game</h3>
+    <div id="mod-chips" class="mod-chips" aria-label="Modifiers for the next game"></div>
+    <p id="mod-summary" class="muted small mod-summary"></p>
     <div id="level-buttons" class="levels"></div>
 
     <h3>Board</h3>
@@ -107,9 +125,41 @@
   <dialog id="win" class="sheet center">
     <h2>Solved!</h2>
     <p id="win-text"></p>
+    <div id="win-quests" class="win-quests" hidden></div>
+    <form method="dialog" class="row-buttons">
+      <button value="close" class="secondary">View board</button>
+      <button value="quests" class="secondary">Quests</button>
+      <button value="new" class="primary">New game</button>
+    </form>
+  </dialog>
+
+  <dialog id="quests" class="sheet">
+    <form method="dialog" class="sheet-head">
+      <h2>Quests</h2>
+      <button class="link-btn" aria-label="Close">✕</button>
+    </form>
+    <section class="rank-card">
+      <div class="rank-row"><b id="rank-name"></b><span id="rank-next"></span></div>
+      <div class="rank-bar"><i id="rank-bar"></i></div>
+      <div id="streak-days" class="streak-days" aria-label="Last seven daily puzzles"></div>
+      <div class="rank-row"><span id="streak-text"></span><span id="streak-best"></span></div>
+    </section>
+    <h3 class="split"><span id="today-label">Today</span><span id="swap-hint"></span></h3>
+    <div id="today-quests" class="qlist"></div>
+    <h3>Weekly gauntlet</h3>
+    <div id="gauntlet" class="qlist q"></div>
+    <h3>Ladders</h3>
+    <div id="ladders" class="qlist"></div>
+    <h3>Milestones</h3>
+    <div id="milestones" class="ms-grid"></div>
+  </dialog>
+
+  <dialog id="fail" class="sheet center">
+    <h2 id="fail-title">Out of strikes</h2>
+    <p id="fail-text"></p>
     <form method="dialog" class="row-buttons">
       <button value="close" class="secondary">Look at board</button>
-      <button value="new" class="primary">New game</button>
+      <button value="retry" class="primary">Try again</button>
     </form>
   </dialog>
 
